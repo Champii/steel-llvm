@@ -1,0 +1,72 @@
+package main
+
+type Steel Peg {
+}
+
+Program <- Statement+
+
+Statement <- (External / Expression)? "\n"
+
+#  External
+
+External <- "external" ExternalBlock
+
+ExternalBlock <- "@{@\n" ExternalDef+ "@}@"
+
+ExternalDef <- Identifier "(" ExternalArgument? ")" ":" Type "\n"
+
+ExternalArgument <- Type ("," ExternalArgument)?
+
+#  Expressions
+
+Expression <- Return / Assignation / Assignable
+
+Return <- "return" Assignable
+
+Assignation <- Identifier (":" Type)? "=" Assignable
+
+Assignable <- Operation / FunctionDeclaration / Array / FunctionCall / VarUse / Literal
+
+# Assignables
+
+Array <- "[" ArrayElem "]"
+
+ArrayElem <- Assignable ("," ArrayElem)?
+
+Operation <- Operand Operator (Operation / Operand)
+
+Operand <- FunctionCall / VarUse / Decimal
+
+Operator <- "+" / "-" / "/" / "*"
+
+FunctionDeclaration <- Arguments? (":" Type)? NoReturn? "->" (Expression / Block)
+
+Arguments <- "(" ArgumentDecl* ")"
+
+ArgumentDecl <- Identifier (":" Type)? ","?
+
+NoReturn <- "!"
+
+Block <- "@{@\n" Statement+ "@}@"
+
+FunctionCall <- VarUse "(" Argument* ")"
+
+Argument <- Assignable ","?
+
+Identifier <- ([_a-zA-Z][a-zA-Z0-9_]*)
+
+VarUse <- ([_a-zA-Z][a-zA-Z0-9_]*)
+
+# Types
+
+Type <- ArrayType / Identifier
+
+ArrayType <- "[" Type "]"
+
+# Literals
+
+Literal <- String / Decimal
+
+Decimal <- "0" / [1-9][0-9]*
+
+String <- "\"" [^"]* "\""
