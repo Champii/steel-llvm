@@ -87,7 +87,60 @@ func writeToDisk(parser Parser) {
 	// build(steel)
 }
 
+func test() {
+	builder := llvm.NewBuilder()
+	module := llvm.NewModule("steel")
+
+	f := llvm.FunctionType(llvm.VoidType(), []llvm.Type{}, false)
+
+	fu := llvm.AddFunction(module, "main", f)
+
+	block := llvm.AddBasicBlock(fu, "entry")
+
+	builder.SetInsertPoint(block, block.FirstInstruction())
+
+	gptr := llvm.AddGlobal(module, llvm.ArrayType(llvm.Int32Type(), 3), "")
+
+	ca := llvm.ConstArray(llvm.Int32Type(), []llvm.Value{
+		llvm.ConstInt(llvm.Int32Type(), 1, false),
+		llvm.ConstInt(llvm.Int32Type(), 2, false),
+		llvm.ConstInt(llvm.Int32Type(), 3, false),
+	})
+
+	gptr.SetInitializer(ca)
+
+	arrAlloc := builder.CreateArrayAlloca(llvm.Int32Type(), llvm.ConstInt(llvm.Int32Type(), 3, false), "")
+	zero := llvm.ConstInt(llvm.Int32Type(), uint64(0), false)
+	ptr := builder.CreateGEP(arrAlloc, []llvm.Value{zero}, "")
+
+	ftMemcpy := llvm.FunctionType(llvm.VoidType(), []llvm.Type{
+		llvm.PointerType(llvm.Int8Type(), 0),
+		llvm.PointerType(llvm.Int8Type(), 0),
+		llvm.Int32Type(),
+		llvm.Int32Type(),
+		llvm.Int1Type(),
+	}, false)
+
+	memcpy := llvm.AddFunction(module, "llvm.memcpy.p0i8.p0i8.i32", ftMemcpy)
+
+	ptr8 := builder.CreateBitCast(ptr, llvm.PointerType(llvm.Int8Type(), 0), "")
+	gptr8 := builder.CreateBitCast(gptr, llvm.PointerType(llvm.Int8Type(), 0), "")
+
+	builder.CreateCall(memcpy, []llvm.Value{
+		ptr8, gptr8, llvm.ConstInt(llvm.Int32Type(), uint64(3*4), false),
+		llvm.ConstInt(llvm.Int32Type(), 1, false),
+		llvm.ConstInt(llvm.Int1Type(), 1, false),
+	}, "")
+
+	builder.CreateRetVoid()
+
+	module.Dump()
+}
+
 func main() {
+	// test()
+	// return
+
 	typeAssoc = make(map[string]llvm.Type)
 
 	typeAssoc["void"] = llvm.VoidType()
@@ -96,6 +149,7 @@ func main() {
 	typeAssoc["int16"] = llvm.Int16Type()
 	typeAssoc["int8"] = llvm.Int8Type()
 	typeAssoc["int1"] = llvm.Int1Type()
+	// typeAssoc["string"] = llvm.Int8Type()
 	typeAssoc["string"] = llvm.PointerType(llvm.Int8Type(), 0)
 
 	if len(os.Args) < 2 {
@@ -162,11 +216,7 @@ func getTerminal(node *Node) *Node {
 		return node
 	}
 
-	for _, child := range node.children {
-		return getTerminal(child)
-	}
-
-	return node
+	return getTerminal(node.children[0])
 }
 
 type INode interface {

@@ -111,10 +111,10 @@ func (p *Parser) getArgDeclType(node *Node) []llvm.Type {
 	var res []llvm.Type
 
 	for _, arg := range node.children {
-		last := getTerminal(arg.children[1])
+		// last := getTerminal(arg.children[1])
 		// p.variables[last.value] =
-		fmt.Println("Types?", last.value)
-		res = append(res, p.getType(last.value))
+		// fmt.Println("Types?", last.value)
+		res = append(res, p.getType(arg.children[1].value))
 	}
 
 	return res
@@ -221,7 +221,6 @@ func (p *Parser) FunctionCall(node *Node) interface{} {
 
 	fmt.Println("Args", arr)
 
-	p.module.Dump()
 	return p.builder.CreateCall(a, args, "")
 }
 
@@ -241,8 +240,12 @@ func (p *Parser) getArgsValue(node *Node) []llvm.Value {
 	for _, arg := range node.children[1:] {
 		assign := arg.children[0].children[0]
 		if assign.token == ruleVarUse {
-			load := p.builder.CreateLoad(p.variables[assign.value], p.variables[assign.value].Name())
-			res = append(res, load)
+			if assign.t[0] != '[' && assign.t != "string" {
+				load := p.builder.CreateLoad(p.variables[assign.value], p.variables[assign.value].Name())
+				res = append(res, load)
+			} else {
+				res = append(res, p.variables[assign.value])
+			}
 		} else {
 			val, _ := strconv.Atoi(assign.value)
 			load := llvm.ConstInt(llvm.Int32Type(), uint64(val), false)
@@ -290,8 +293,6 @@ func (p *Parser) ExternalDef(node *Node) interface{} {
 		types = arr[1].([]llvm.Type)
 	}
 
-	fmt.Println("TYPES", types)
-
 	retType := p.getType(ret.value)
 
 	extFuncType := llvm.FunctionType(retType, types, false)
@@ -335,13 +336,18 @@ func (p *Parser) Assignation(node *Node) interface{} {
 
 		assValue := arr[id].(llvm.Value)
 
-		t := p.getType(typeChild.value)
+		if assChild.children[0].t[0] != '[' && assChild.children[0].t != "string" {
+			t := p.getType(assChild.t)
 
-		v := p.builder.CreateAlloca(t, idChild.value)
+			v := p.builder.CreateAlloca(t, idChild.value)
 
-		p.variables[idChild.value] = v
+			p.variables[idChild.value] = v
 
-		res = p.builder.CreateStore(assValue, v)
+			res = p.builder.CreateStore(assValue, v)
+		} else {
+			res = assValue
+			p.variables[idChild.value] = assValue
+		}
 	} else {
 		res = arr[1].(llvm.Value)
 	}
@@ -384,11 +390,31 @@ func (p *Parser) AddMemcpy() {
 }
 
 func (p *Parser) String(node *Node) interface{} {
-	str := p.builder.CreateGlobalStringPtr(node.value[1:len(node.value)-1], "s")
-	zero := llvm.ConstInt(llvm.Int32Type(), uint64(0), false)
-	ptr := p.builder.CreateGEP(str, []llvm.Value{zero}, "")
+	realStr := node.value[1 : len(node.value)-1]
+	str := p.builder.CreateGlobalStringPtr(realStr, "s")
 
-	return ptr
+	node.t = "int8"
+
+	t := p.getType(node.t)
+
+	v := p.builder.CreateArrayAlloca(t, llvm.ConstInt(llvm.Int32Type(), uint64(len(realStr)+1), false), "")
+
+	zero := llvm.ConstInt(llvm.Int32Type(), uint64(0), false)
+	ptr := p.builder.CreateGEP(v, []llvm.Value{zero}, "")
+
+	ptr8 := p.builder.CreateBitCast(ptr, llvm.PointerType(llvm.Int8Type(), 0), "")
+	gptr8 := p.builder.CreateBitCast(str, llvm.PointerType(llvm.Int8Type(), 0), "")
+
+	p.builder.CreateCall(p.variables["memcpy"], []llvm.Value{
+		ptr8, gptr8, llvm.ConstInt(llvm.Int32Type(), uint64(len(realStr)+1), false),
+		llvm.ConstInt(llvm.IntType(32), 1, false),
+		llvm.ConstInt(llvm.IntType(1), 1, false),
+	}, "")
+	// zero := llvm.ConstInt(llvm.Int32Type(), uint64(0), false)
+	// ptr := p.builder.CreateGEP(str, []llvm.Value{zero}, "")
+	// load := p.builder.CreateLoad(str, "")
+
+	return ptr8
 }
 
 func (p *Parser) Operation(node *Node) interface{} {
@@ -424,11 +450,7 @@ func (p *Parser) Operator(node *Node) interface{} {
 func (p *Parser) Array(node *Node) interface{} {
 	args := p.Parse(node)
 
-	fmt.Println(args[0])
-
 	t := p.getType(node.children[0].t)
-
-	fmt.Println("TYPE", t)
 
 	var res []llvm.Value
 
@@ -436,22 +458,25 @@ func (p *Parser) Array(node *Node) interface{} {
 		res = append(res, item)
 	}
 
-	t = p.getType(node.children[0].t)
-	// }
-	// ca := llvm.ConstArray(t, res)
-	// v.SetInitializer()
+	ca := llvm.ConstArray(t, res)
+	gptr := llvm.AddGlobal(p.module, llvm.ArrayType(t, len(res)), "")
+	gptr.SetInitializer(ca)
 
-	v := p.builder.CreateArrayAlloca(t, llvm.ConstInt(llvm.Int32Type(), uint64(len(args)), false), "")
+	v := p.builder.CreateArrayAlloca(t, llvm.ConstInt(llvm.Int32Type(), uint64(len(res)), false), "")
+
 	zero := llvm.ConstInt(llvm.Int32Type(), uint64(0), false)
-	return p.builder.CreateGEP(v, []llvm.Value{zero}, "")
+	ptr := p.builder.CreateGEP(v, []llvm.Value{zero}, "")
 
-	// a := p.module.NamedFunction("memcpy")
-	// argsVal := p.getArgsValue(node)
+	ptr8 := p.builder.CreateBitCast(ptr, llvm.PointerType(llvm.Int8Type(), 0), "")
+	gptr8 := p.builder.CreateBitCast(gptr, llvm.PointerType(llvm.Int8Type(), 0), "")
 
-	// return p.builder.CreateCall(a, argsVal, "")
+	p.builder.CreateCall(p.variables["memcpy"], []llvm.Value{
+		ptr8, gptr8, llvm.ConstInt(llvm.Int32Type(), uint64(len(res)), false),
+		llvm.ConstInt(llvm.IntType(32), 1, false),
+		llvm.ConstInt(llvm.IntType(1), 1, false),
+	}, "")
 
-	// return llvm.ConstArray(t, res)
-	// return v
+	return ptr
 }
 
 func (p *Parser) ArrayElem(node *Node) interface{} {
@@ -461,6 +486,8 @@ func (p *Parser) ArrayElem(node *Node) interface{} {
 
 	if len(args) > 1 {
 		res = append(args[1].([]llvm.Value), args[0].(llvm.Value))
+		copy(res[1:], res[0:])
+		res[0] = args[0].(llvm.Value)
 	} else {
 		res = append(res, args[0].(llvm.Value))
 	}

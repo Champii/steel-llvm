@@ -2,21 +2,19 @@ external
   putchar(int): int
   puts(string): void
 
-tata = (b: string) ->
-  c = "mdr"
+toto = (i: [int]) -> i
+lol = (i: int, j: int) -> i + j
+mdr = (j: string) ->
+  c = j
   puts(c)
-  "woot"
-
-mdr = (x: int) ->
-  x
-
-lol = (i: int, j: int) ->
-  i + j
-
+  2
 
 main = ->
-  a = "lol"
-  puts(a)
-  x = tata(a)
-  puts(x)
-  lol(1, 42)
+  a = 40
+  z = 2
+  b = "lol"
+  v = [1, 2, 3]
+  mdr(b)
+  puts(b)
+  toto(v)
+  lol(a, z)

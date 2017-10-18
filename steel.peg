@@ -5,7 +5,9 @@ type Steel Peg {
 
 Program <- Statement+
 
-Statement <- (External / Expression)? "\n"
+Statement <- (Com / External / Expression)? "\n"
+
+Com <- "#" [^\n]*
 
 #  External
 

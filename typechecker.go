@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 )
 
@@ -56,6 +57,8 @@ func (p *TypeChecker) Parse(node *Node) []interface{} {
 			toAdd = p.Identifier(child)
 		case ruleType:
 			toAdd = p.Type(child)
+		case ruleArrayType:
+			toAdd = p.ArrayType(child)
 		case ruleVarUse:
 			toAdd = p.VarUse(child)
 		case ruleDecimal:
@@ -245,6 +248,7 @@ func (p *TypeChecker) ArgumentDecl(node *Node) interface{} {
 	args := p.Parse(node)
 	name := node.children[0].value
 	t := node.children[1].children[0].value
+	fmt.Println("Type", args[1].(string))
 
 	p.variables[name] = t
 
@@ -310,6 +314,12 @@ func (p *TypeChecker) VarUse(node *Node) interface{} {
 	}
 
 	return id
+}
+
+func (p *TypeChecker) ArrayType(node *Node) interface{} {
+	// args := p.Parse(node)
+
+	return node.value
 }
 
 func (p *TypeChecker) Type(node *Node) interface{} {
