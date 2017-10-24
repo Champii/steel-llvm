@@ -1,11 +1,7 @@
 package main
 
-import (
-	"llvm.org/llvm/bindings/go/llvm"
-)
-
 type Preparser struct {
-	variables map[string]llvm.Value
+	// variables map[string]llvm.Value
 }
 
 func (p *Preparser) Parse(node *Node) []interface{} {

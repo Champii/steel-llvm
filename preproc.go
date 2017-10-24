@@ -19,12 +19,12 @@ func Preproc(str string) string {
 
 	var lines []string
 	for _, v := range rawLines {
-		if strings.Compare(v, "\n") != 0 {
+		if len(v) > 0 {
 			lines = append(lines, v)
 		}
 	}
 
-	res := make([]string, len(lines))
+	var res []string
 
 	lastIndent := 0
 	indentSize := 0
@@ -39,7 +39,7 @@ func Preproc(str string) string {
 		if indent > lastIndent {
 			res[len(res)-1] = res[len(res)-1] + "@{@"
 		} else if indent < lastIndent {
-			indentBuff := lastIndent
+			indentBuff := lastIndent - indent
 
 			for indentBuff > 0 {
 				res = append(res, "@}@")
@@ -52,6 +52,11 @@ func Preproc(str string) string {
 		res = append(res, lines[i])
 	}
 
-	joined := strings.Join(res, "\n")
+	for lastIndent > 0 {
+		res = append(res, "@}@")
+		lastIndent -= indentSize
+	}
+
+	joined := strings.Join(res, "\n") + "\n"
 	return strings.Replace(joined, " ", "", -1)
 }

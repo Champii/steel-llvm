@@ -44,22 +44,30 @@ func getAst(steel *Steel) *Node {
 func parse(steel *Steel, newAst *Node) Parser {
 	steel.PrintSyntaxTree()
 
-	preparser := Preparser{variables: make(map[string]llvm.Value)}
+	functionsType := make(map[string]FuncDef)
+	variablesType := make(map[string]TypeDef)
+	classesType := make(map[string]ClassDef)
+
+	preparser := Preparser{}
 
 	preparser.Parse(newAst)
 
 	typeChecker := TypeChecker{
-		functions: make(map[string]FuncDef),
-		variables: make(map[string]string),
+		functions: functionsType,
+		variables: variablesType,
+		classes:   classesType,
 	}
 
 	typeChecker.Parse(newAst)
 
 	parser := Parser{
-		builder:   llvm.NewBuilder(),
-		module:    llvm.NewModule("steel"),
-		steel:     steel,
-		variables: make(map[string]llvm.Value),
+		builder:       llvm.NewBuilder(),
+		module:        llvm.NewModule("steel"),
+		steel:         steel,
+		variables:     make(map[string]llvm.Value),
+		functionsType: functionsType,
+		variablesType: variablesType,
+		classesType:   classesType,
 	}
 
 	parser.AddMemcpy()
@@ -99,42 +107,74 @@ func test() {
 
 	builder.SetInsertPoint(block, block.FirstInstruction())
 
-	gptr := llvm.AddGlobal(module, llvm.ArrayType(llvm.Int32Type(), 3), "")
+	funcPtrType := llvm.PointerType(f, 0)
 
-	ca := llvm.ConstArray(llvm.Int32Type(), []llvm.Value{
-		llvm.ConstInt(llvm.Int32Type(), 1, false),
-		llvm.ConstInt(llvm.Int32Type(), 2, false),
-		llvm.ConstInt(llvm.Int32Type(), 3, false),
-	})
+	sType := llvm.StructType([]llvm.Type{llvm.Int32Type(), funcPtrType}, false)
 
-	gptr.SetInitializer(ca)
+	sPtr := builder.CreateAlloca(sType, "")
+	// test := builder.CreateAlloca(llvm.Int32Type(), "")
 
-	arrAlloc := builder.CreateArrayAlloca(llvm.Int32Type(), llvm.ConstInt(llvm.Int32Type(), 3, false), "")
 	zero := llvm.ConstInt(llvm.Int32Type(), uint64(0), false)
-	ptr := builder.CreateGEP(arrAlloc, []llvm.Value{zero}, "")
+	ptr := builder.CreateStructGEP(sPtr, 0, "")
 
-	ftMemcpy := llvm.FunctionType(llvm.VoidType(), []llvm.Type{
-		llvm.PointerType(llvm.Int8Type(), 0),
-		llvm.PointerType(llvm.Int8Type(), 0),
-		llvm.Int32Type(),
-		llvm.Int32Type(),
-		llvm.Int1Type(),
-	}, false)
+	builder.CreateStore(zero, ptr)
 
-	memcpy := llvm.AddFunction(module, "llvm.memcpy.p0i8.p0i8.i32", ftMemcpy)
+	ptr2 := builder.CreateStructGEP(sPtr, 1, "")
 
-	ptr8 := builder.CreateBitCast(ptr, llvm.PointerType(llvm.Int8Type(), 0), "")
-	gptr8 := builder.CreateBitCast(gptr, llvm.PointerType(llvm.Int8Type(), 0), "")
+	builder.CreateStore(fu, ptr2)
 
-	builder.CreateCall(memcpy, []llvm.Value{
-		ptr8, gptr8, llvm.ConstInt(llvm.Int32Type(), uint64(3*4), false),
-		llvm.ConstInt(llvm.Int32Type(), 1, false),
-		llvm.ConstInt(llvm.Int1Type(), 1, false),
-	}, "")
+	lol := builder.CreateLoad(ptr2, "")
+
+	builder.CreateCall(lol, []llvm.Value{}, "")
+
+	// gptr := llvm.AddGlobal(module, llvm.ArrayType(llvm.Int32Type(), 3), "")
+
+	// ca := llvm.ConstArray(llvm.Int32Type(), []llvm.Value{
+	// 	llvm.ConstInt(llvm.Int32Type(), 1, false),
+	// 	llvm.ConstInt(llvm.Int32Type(), 2, false),
+	// 	llvm.ConstInt(llvm.Int32Type(), 3, false),
+	// })
+
+	// gptr.SetInitializer(ca)
+
+	// arrAlloc := builder.CreateArrayAlloca(llvm.Int32Type(), llvm.ConstInt(llvm.Int32Type(), 3, false), "")
+	// zero := llvm.ConstInt(llvm.Int32Type(), uint64(0), false)
+	// ptr := builder.CreateGEP(arrAlloc, []llvm.Value{zero}, "")
+
+	// ftMemcpy := llvm.FunctionType(llvm.VoidType(), []llvm.Type{
+	// 	llvm.PointerType(llvm.Int8Type(), 0),
+	// 	llvm.PointerType(llvm.Int8Type(), 0),
+	// 	llvm.Int32Type(),
+	// 	llvm.Int32Type(),
+	// 	llvm.Int1Type(),
+	// }, false)
+
+	// memcpy := llvm.AddFunction(module, "llvm.memcpy.p0i8.p0i8.i32", ftMemcpy)
+
+	// ptr8 := builder.CreateBitCast(ptr, llvm.PointerType(llvm.Int8Type(), 0), "")
+	// gptr8 := builder.CreateBitCast(gptr, llvm.PointerType(llvm.Int8Type(), 0), "")
+
+	// builder.CreateCall(memcpy, []llvm.Value{
+	// 	ptr8, gptr8, llvm.ConstInt(llvm.Int32Type(), uint64(3*4), false),
+	// 	llvm.ConstInt(llvm.Int32Type(), 1, false),
+	// 	llvm.ConstInt(llvm.Int1Type(), 1, false),
+	// }, "")
 
 	builder.CreateRetVoid()
 
 	module.Dump()
+	if ok := llvm.VerifyModule(module, llvm.ReturnStatusAction); ok != nil {
+		fmt.Println(ok.Error())
+	} else {
+		fmt.Println("Ok")
+	}
+
+	destFile, err := os.Create(os.Args[1] + ".bc")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	llvm.WriteBitcodeToFile(module, destFile)
 }
 
 func main() {
@@ -160,6 +200,8 @@ func main() {
 	file := getFile(os.Args[1])
 
 	preproc := Preproc(file)
+
+	fmt.Println(preproc)
 
 	steel := &Steel{Buffer: preproc}
 
@@ -230,7 +272,7 @@ type Node struct {
 	value    string
 	parent   *Node
 	children []*Node
-	t        string
+	t        TypeDef
 }
 
 func (n *Node) AddChildren(node *Node) {

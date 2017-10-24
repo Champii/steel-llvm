@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"strconv"
 
@@ -9,10 +8,13 @@ import (
 )
 
 type Parser struct {
-	builder   llvm.Builder
-	module    llvm.Module
-	variables map[string]llvm.Value
-	steel     *Steel
+	builder       llvm.Builder
+	module        llvm.Module
+	variables     map[string]llvm.Value
+	functionsType map[string]FuncDef
+	variablesType map[string]TypeDef
+	classesType   map[string]ClassDef
+	steel         *Steel
 }
 
 func (p *Parser) Parse(node *Node) []interface{} {
@@ -70,7 +72,26 @@ func (p *Parser) Parse(node *Node) []interface{} {
 			toAdd = p.Array(child)
 		case ruleArrayElem:
 			toAdd = p.ArrayElem(child)
-
+		case ruleComputedProperty:
+			toAdd = p.ComputedProperty(child)
+		case ruleBraceComputedProperty:
+			toAdd = p.BraceComputedProperty(child)
+		case ruleDotComputedProperty:
+			toAdd = p.DotComputedProperty(child)
+		case ruleClass:
+			toAdd = p.Class(child)
+		case ruleClassBlock:
+			toAdd = p.ClassBlock(child)
+		case ruleClassEntry:
+			toAdd = p.ClassEntry(child)
+		case ruleObject:
+			toAdd = p.Object(child)
+		case ruleObjectInline:
+			toAdd = p.ObjectInline(child)
+		case ruleObjectBlock:
+			toAdd = p.ObjectBlock(child)
+		case ruleObjectProperty:
+			toAdd = p.ObjectProperty(child)
 		default:
 			p.Parse(child)
 
@@ -100,7 +121,12 @@ func (p *Parser) getType(name string) llvm.Type {
 		t, ok := typeAssoc[name]
 
 		if !ok {
-			log.Fatal("Parser: Unknown Type ", name)
+			t, ok := p.classesType[name]
+			if !ok {
+				log.Fatal("Parser: Unknown Type ", name)
+			}
+
+			return t.td.t
 		}
 
 		return t
@@ -111,9 +137,6 @@ func (p *Parser) getArgDeclType(node *Node) []llvm.Type {
 	var res []llvm.Type
 
 	for _, arg := range node.children {
-		// last := getTerminal(arg.children[1])
-		// p.variables[last.value] =
-		// fmt.Println("Types?", last.value)
 		res = append(res, p.getType(arg.children[1].value))
 	}
 
@@ -153,7 +176,6 @@ func (p *Parser) FunctionDeclaration(node *Node) interface{} {
 
 	fu := llvm.AddFunction(p.module, funcName, f)
 
-	// fmt.Println("lol", fu.Params())
 	if argsElem != nil {
 		p.declArgs(argsElem, fu.Params())
 	}
@@ -188,7 +210,6 @@ func (p *Parser) ArrayType(node *Node) interface{} {
 }
 
 func (p *Parser) Type(node *Node) interface{} {
-	// return p.Parse(node)[0]
 	return node.value
 }
 
@@ -208,56 +229,31 @@ func (p *Parser) Return(node *Node) interface{} {
 func (p *Parser) FunctionCall(node *Node) interface{} {
 	_, exists := p.variables[node.children[0].value]
 
-	arr := p.Parse(node)
+	args := p.Parse(node)
 
 	if !exists {
 		log.Fatal("Unknown function ", node.children[0].value)
 	}
 
-	a := p.variables[node.children[0].value]
-	args := p.getArgsValue(node)
+	args[1].([]llvm.Value)[0].Dump()
 
-	// args = arr[1].([]llvm.Value)
-
-	fmt.Println("Args", arr)
-
-	return p.builder.CreateCall(a, args, "")
-}
-
-// func (p *Parser) getArgsValue(arr []interface{}) []llvm.Value {
-// 	var res []llvm.Value
-
-// 	for _, item := range arr {
-// 		res = append(res, item.(llvm.Value))
-// 	}
-
-// 	return res
-// }
-
-func (p *Parser) getArgsValue(node *Node) []llvm.Value {
-	var res []llvm.Value
-
-	for _, arg := range node.children[1:] {
-		assign := arg.children[0].children[0]
-		if assign.token == ruleVarUse {
-			if assign.t[0] != '[' && assign.t != "string" {
-				load := p.builder.CreateLoad(p.variables[assign.value], p.variables[assign.value].Name())
-				res = append(res, load)
-			} else {
-				res = append(res, p.variables[assign.value])
-			}
-		} else {
-			val, _ := strconv.Atoi(assign.value)
-			load := llvm.ConstInt(llvm.Int32Type(), uint64(val), false)
-			res = append(res, load)
-		}
-	}
-
-	return res
+	return p.builder.CreateCall(args[0].(llvm.Value), args[1].([]llvm.Value), "")
 }
 
 func (p *Parser) Argument(node *Node) interface{} {
-	return p.Parse(node)[0]
+	args := p.Parse(node)
+
+	var res []llvm.Value
+
+	if len(args) > 1 {
+		res = append(args[1].([]llvm.Value), args[0].(llvm.Value))
+		copy(res[1:], res[0:])
+		res[0] = args[0].(llvm.Value)
+	} else {
+		res = append(res, args[0].(llvm.Value))
+	}
+
+	return res
 }
 
 func (p *Parser) ArgumentDecl(node *Node) interface{} {
@@ -286,9 +282,6 @@ func (p *Parser) ExternalDef(node *Node) interface{} {
 	id := node.children[0]
 	ret := node.children[len(node.children)-1]
 
-	// for i := 1; i <= len(node.children)-2; i++ {
-	// 	types = append(types, p.getType(node.children[i].value))
-	// }
 	if len(arr) > 2 {
 		types = arr[1].([]llvm.Type)
 	}
@@ -336,10 +329,9 @@ func (p *Parser) Assignation(node *Node) interface{} {
 
 		assValue := arr[id].(llvm.Value)
 
-		if assChild.children[0].t[0] != '[' && assChild.children[0].t != "string" {
-			t := p.getType(assChild.t)
-
-			v := p.builder.CreateAlloca(t, idChild.value)
+		childT := assChild.children[0].t.str
+		if childT == "int" {
+			v := p.builder.CreateAlloca(assChild.t.t, idChild.value)
 
 			p.variables[idChild.value] = v
 
@@ -360,10 +352,7 @@ func (p *Parser) Identifier(node *Node) interface{} {
 }
 
 func (p *Parser) VarUse(node *Node) interface{} {
-	va := p.getVariableValue(node.value)
-	// load := p.builder.CreateLoad(va, va.Name())
-
-	return va
+	return p.getVariableValue(node.value)
 }
 
 func (p *Parser) Literal(node *Node) interface{} {
@@ -393,9 +382,7 @@ func (p *Parser) String(node *Node) interface{} {
 	realStr := node.value[1 : len(node.value)-1]
 	str := p.builder.CreateGlobalStringPtr(realStr, "s")
 
-	node.t = "int8"
-
-	t := p.getType(node.t)
+	t := node.t.t
 
 	v := p.builder.CreateArrayAlloca(t, llvm.ConstInt(llvm.Int32Type(), uint64(len(realStr)+1), false), "")
 
@@ -442,15 +429,13 @@ func (p *Parser) Operand(node *Node) interface{} {
 }
 
 func (p *Parser) Operator(node *Node) interface{} {
-	// args := p.Parse(node)
-
 	return node.value
 }
 
 func (p *Parser) Array(node *Node) interface{} {
 	args := p.Parse(node)
 
-	t := p.getType(node.children[0].t)
+	t := node.children[0].t.t
 
 	var res []llvm.Value
 
@@ -470,8 +455,10 @@ func (p *Parser) Array(node *Node) interface{} {
 	ptr8 := p.builder.CreateBitCast(ptr, llvm.PointerType(llvm.Int8Type(), 0), "")
 	gptr8 := p.builder.CreateBitCast(gptr, llvm.PointerType(llvm.Int8Type(), 0), "")
 
+	targetSize := llvm.NewTargetData(p.module.DataLayout()).TypeAllocSize(t)
+
 	p.builder.CreateCall(p.variables["memcpy"], []llvm.Value{
-		ptr8, gptr8, llvm.ConstInt(llvm.Int32Type(), uint64(len(res)), false),
+		ptr8, gptr8, llvm.ConstInt(llvm.Int32Type(), uint64(len(res))*targetSize, false),
 		llvm.ConstInt(llvm.IntType(32), 1, false),
 		llvm.ConstInt(llvm.IntType(1), 1, false),
 	}, "")
@@ -490,6 +477,122 @@ func (p *Parser) ArrayElem(node *Node) interface{} {
 		res[0] = args[0].(llvm.Value)
 	} else {
 		res = append(res, args[0].(llvm.Value))
+	}
+
+	return res
+}
+
+var compValue llvm.Value
+
+func (p *Parser) ComputedProperty(node *Node) interface{} {
+	if node.parent.token != ruleBraceComputedProperty && node.parent.token != ruleDotComputedProperty {
+		compValue = p.getVariableValue(node.children[0].value)
+	}
+
+	if len(node.children) == 1 {
+		return compValue
+	}
+
+	args := p.Parse(node)
+
+	return args[1]
+}
+
+func (p *Parser) BraceComputedProperty(node *Node) interface{} {
+	args := p.Parse(node)
+
+	gep := p.builder.CreateGEP(compValue, []llvm.Value{args[0].(llvm.Value)}, "")
+	load := p.builder.CreateLoad(gep, "")
+	compValue = load
+
+	if len(args) == 1 {
+		return compValue
+	}
+
+	return args[1]
+}
+
+func (p *Parser) DotComputedProperty(node *Node) interface{} {
+
+	c := p.classesType[node.parent.children[0].t.str]
+	idx := c.GetKeyIdx(node.children[0].value)
+
+	gep := p.builder.CreateStructGEP(compValue, idx, "")
+	load := p.builder.CreateLoad(gep, "")
+
+	compValue = load
+
+	return p.Parse(node)[0]
+}
+
+func (p *Parser) Class(node *Node) interface{} {
+	args := p.Parse(node)
+
+	return args[0]
+}
+
+func (p *Parser) ClassBlock(node *Node) interface{} {
+	args := p.Parse(node)
+
+	return args[0]
+}
+
+func (p *Parser) ClassEntry(node *Node) interface{} {
+	args := p.Parse(node)
+
+	return args[0]
+}
+
+func (p *Parser) Object(node *Node) interface{} {
+	args := p.Parse(node)
+
+	class := p.classesType[node.t.str]
+
+	sPtr := p.builder.CreateAlloca(node.t.t.ElementType(), "")
+
+	for _, prop := range args[0].([]ObjProperty) {
+		objProp := prop
+
+		idx := class.GetKeyIdx(objProp.key)
+
+		ptr := p.builder.CreateStructGEP(sPtr, idx, "")
+
+		p.builder.CreateStore(objProp.val, ptr)
+	}
+
+	return sPtr
+}
+
+func (p *Parser) ObjectInline(node *Node) interface{} {
+	args := p.Parse(node)
+
+	return args[0]
+}
+
+func (p *Parser) ObjectBlock(node *Node) interface{} {
+	args := p.Parse(node)
+
+	return args[0]
+}
+
+type ObjProperty struct {
+	key string
+	val llvm.Value
+}
+
+func (p *Parser) ObjectProperty(node *Node) interface{} {
+	args := p.Parse(node)
+
+	var res []ObjProperty
+
+	if len(args) > 2 {
+		obj := ObjProperty{key: args[0].(string), val: args[1].(llvm.Value)}
+
+		res = append(args[2].([]ObjProperty), obj)
+		copy(res[1:], res[0:])
+		res[0] = obj
+	} else {
+		res = append(res, ObjProperty{key: args[0].(string), val: args[1].(llvm.Value)})
 	}
 
 	return res
