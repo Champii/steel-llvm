@@ -15,6 +15,7 @@ type Parser struct {
 	variablesType map[string]TypeDef
 	classesType   map[string]ClassDef
 	steel         *Steel
+	currentNode   *Node
 }
 
 func (p *Parser) Parse(node *Node) []interface{} {
@@ -22,6 +23,8 @@ func (p *Parser) Parse(node *Node) []interface{} {
 
 	for _, child := range node.children {
 		var toAdd interface{}
+
+		p.currentNode = child
 
 		switch child.token {
 		case ruleIdentifier:
@@ -92,6 +95,12 @@ func (p *Parser) Parse(node *Node) []interface{} {
 			toAdd = p.ObjectBlock(child)
 		case ruleObjectProperty:
 			toAdd = p.ObjectProperty(child)
+		case ruleComputedPropertyUnderef:
+			toAdd = p.ComputedPropertyUnderef(child)
+		case ruleBraceComputedPropertyUnderef:
+			toAdd = p.BraceComputedPropertyUnderef(child)
+		case ruleDotComputedPropertyUnderef:
+			toAdd = p.DotComputedPropertyUnderef(child)
 		default:
 			p.Parse(child)
 
@@ -105,7 +114,7 @@ func (p *Parser) Parse(node *Node) []interface{} {
 func (p *Parser) getVariableValue(name string) llvm.Value {
 	t, ok := p.variables[name]
 	if !ok {
-		log.Fatal("Unknown Var ", name)
+		log.Panic("At: ", p.currentNode.parent.value, ": Unknown Var ", name)
 	}
 
 	return t
@@ -123,7 +132,7 @@ func (p *Parser) getType(name string) llvm.Type {
 		if !ok {
 			t, ok := p.classesType[name]
 			if !ok {
-				log.Fatal("Parser: Unknown Type ", name)
+				log.Panic("Parser: Unknown Type ", name)
 			}
 
 			return t.td.t
@@ -232,7 +241,7 @@ func (p *Parser) FunctionCall(node *Node) interface{} {
 	args := p.Parse(node)
 
 	if !exists {
-		log.Fatal("Unknown function ", node.children[0].value)
+		log.Panic("Unknown function ", node.children[0].value)
 	}
 
 	args[1].([]llvm.Value)[0].Dump()
@@ -316,9 +325,19 @@ func (p *Parser) Assignation(node *Node) interface{} {
 	arr := p.Parse(node)
 	var res llvm.Value
 
-	idChild := getChild(node, ruleIdentifier)
+	idChild := getChild(node, ruleComputedPropertyUnderef)
 	assChild := getChild(node, ruleAssignable)
 	typeChild := getChild(node, ruleType)
+
+	var va llvm.Value
+	exists := true
+
+	switch arr[0].(type) {
+	case string:
+		va, exists = p.variables[arr[0].(string)]
+	case llvm.Value:
+		va = arr[0].(llvm.Value)
+	}
 
 	if assChild.children[0].token != ruleFunctionDeclaration {
 		id := 2
@@ -331,11 +350,19 @@ func (p *Parser) Assignation(node *Node) interface{} {
 
 		childT := assChild.children[0].t.str
 		if childT == "int" {
-			v := p.builder.CreateAlloca(assChild.t.t, idChild.value)
+			var v llvm.Value
+			if exists {
+				v = va
+			} else {
+				v = p.builder.CreateAlloca(assChild.t.t, idChild.value)
+			}
+			res = v
+
+			p.builder.CreateStore(assValue, v)
 
 			p.variables[idChild.value] = v
 
-			res = p.builder.CreateStore(assValue, v)
+			res = p.builder.CreateLoad(res, "")
 		} else {
 			res = assValue
 			p.variables[idChild.value] = assValue
@@ -486,7 +513,12 @@ var compValue llvm.Value
 
 func (p *Parser) ComputedProperty(node *Node) interface{} {
 	if node.parent.token != ruleBraceComputedProperty && node.parent.token != ruleDotComputedProperty {
-		compValue = p.getVariableValue(node.children[0].value)
+		cv, ok := p.variables[node.children[0].value]
+		if !ok {
+			return node.children[0].value
+		}
+
+		compValue = cv
 	}
 
 	if len(node.children) == 1 {
@@ -513,7 +545,6 @@ func (p *Parser) BraceComputedProperty(node *Node) interface{} {
 }
 
 func (p *Parser) DotComputedProperty(node *Node) interface{} {
-
 	c := p.classesType[node.parent.children[0].t.str]
 	idx := c.GetKeyIdx(node.children[0].value)
 
@@ -521,6 +552,52 @@ func (p *Parser) DotComputedProperty(node *Node) interface{} {
 	load := p.builder.CreateLoad(gep, "")
 
 	compValue = load
+
+	return p.Parse(node)[0]
+}
+
+var compValueUnderef llvm.Value
+
+func (p *Parser) ComputedPropertyUnderef(node *Node) interface{} {
+	if node.parent.token != ruleBraceComputedPropertyUnderef && node.parent.token != ruleDotComputedPropertyUnderef {
+		cv, ok := p.variables[node.children[0].value]
+		if !ok {
+			return node.children[0].value
+		}
+
+		compValueUnderef = cv
+	}
+
+	if len(node.children) == 1 {
+		return compValueUnderef
+	}
+
+	args := p.Parse(node)
+
+	return args[1]
+}
+
+func (p *Parser) BraceComputedPropertyUnderef(node *Node) interface{} {
+	args := p.Parse(node)
+
+	gep := p.builder.CreateGEP(compValueUnderef, []llvm.Value{args[0].(llvm.Value)}, "")
+	// load := p.builder.CreateLoad(gep, "")
+	compValueUnderef = gep
+
+	if len(args) == 1 {
+		return compValueUnderef
+	}
+
+	return args[1]
+}
+
+func (p *Parser) DotComputedPropertyUnderef(node *Node) interface{} {
+	c := p.classesType[node.parent.children[0].t.str]
+	idx := c.GetKeyIdx(node.children[0].value)
+
+	gep := p.builder.CreateStructGEP(compValueUnderef, idx, "")
+
+	compValueUnderef = gep
 
 	return p.Parse(node)[0]
 }

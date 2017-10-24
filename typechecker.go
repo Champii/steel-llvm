@@ -112,6 +112,12 @@ func (p *TypeChecker) Parse(node *Node) []TypeDef {
 			toAdd = p.BraceComputedProperty(child)
 		case ruleDotComputedProperty:
 			toAdd = p.DotComputedProperty(child)
+		case ruleComputedPropertyUnderef:
+			toAdd = p.ComputedProperty(child)
+		case ruleBraceComputedPropertyUnderef:
+			toAdd = p.BraceComputedProperty(child)
+		case ruleDotComputedPropertyUnderef:
+			toAdd = p.DotComputedProperty(child)
 		case ruleClass:
 			toAdd = p.Class(child)
 		case ruleClassEntry:
@@ -168,7 +174,7 @@ func (p *TypeChecker) getType(name string) llvm.Type {
 
 			t, ok := p.classes[name]
 			if !ok {
-				log.Fatal("TypeChecker: Unknown Type ", name)
+				log.Panic("TypeChecker: Unknown Type ", name)
 			}
 
 			return t.td.t
@@ -227,7 +233,7 @@ func (p *TypeChecker) getObjectFromSignature(keys []string, types []TypeDef) *Cl
 func (p *TypeChecker) Assignation(node *Node) TypeDef {
 	arr := p.Parse(node)
 
-	idChild := getChild(node, ruleIdentifier)
+	idChild := getChild(node, ruleComputedPropertyUnderef)
 	assChild := getChild(node, ruleAssignable)
 	// typeChild := getChild(node, ruleType)
 
@@ -245,7 +251,7 @@ func (p *TypeChecker) Assignation(node *Node) TypeDef {
 	}
 
 	if len(arr) == 3 && arr[1] != arr[2] {
-		log.Fatal("TypeChecker: Invalid type for property "+node.children[0].value+". Expected: ", arr[1].str, ", Found: ", arr[2].str)
+		log.Panic("TypeChecker: Invalid type for property "+node.children[0].value+". Expected: ", arr[1].str, ", Found: ", arr[2].str)
 	}
 
 	return p.variables[idChild.value]
@@ -359,16 +365,16 @@ func (p *TypeChecker) FunctionCall(node *Node) TypeDef {
 	f, ok := p.functions[node.children[0].value]
 
 	if !ok {
-		log.Fatal("Unknown function: ", name)
+		log.Panic("Unknown function: ", name)
 	}
 
 	if len(args) != len(f.argsType) {
-		log.Fatal("Wrong number of arguments: ", name, " ", len(args), len(f.argsType))
+		log.Panic("Wrong number of arguments: ", name, " ", len(args), len(f.argsType))
 	}
 
 	for i, arg := range f.argsType {
 		if arg.str != args[i].str {
-			log.Fatal("Argument ", i+1, " type mismatch signature for function: ", name, ". Found: ", args[i].str, " , Expected: ", arg.str)
+			log.Panic("Argument ", i+1, " type mismatch signature for function: ", name, ". Found: ", args[i].str, " , Expected: ", arg.str)
 		}
 	}
 
@@ -424,7 +430,7 @@ func (p *TypeChecker) VarUse(node *Node) TypeDef {
 			id, ok := p.classes[node.value]
 
 			if !ok {
-				log.Fatal("Unknown identifier: ", node.value)
+				log.Panic("Unknown identifier: ", node.value)
 			}
 
 			return id.td
@@ -493,7 +499,7 @@ func (p *TypeChecker) Array(node *Node) TypeDef {
 
 	for _, child := range args {
 		if child.t != td.t {
-			log.Fatal("Arrays must be type consistant")
+			log.Panic("Arrays must be type consistant")
 		}
 	}
 
@@ -507,11 +513,11 @@ func (p *TypeChecker) ArrayElem(node *Node) TypeDef {
 }
 
 func (p *TypeChecker) ComputedProperty(node *Node) TypeDef {
-	v, ok := p.variables[node.children[0].value]
+	v := p.variables[node.children[0].value]
 
-	if !ok {
-		log.Fatal("TypeChecker: Unknown Type ", node.children[0].value)
-	}
+	// if !ok {
+	// 	log.Panic("TypeChecker: Unknown Type ", node.children[0].value)
+	// }
 
 	args := p.Parse(node)
 
@@ -528,7 +534,7 @@ func (p *TypeChecker) BraceComputedProperty(node *Node) TypeDef {
 	v := p.variables[node.parent.children[0].value]
 
 	if len(v.str) > 0 && v.str[0] != '[' {
-		log.Fatal("Error: ", node.parent.children[0].value, " is not an array")
+		log.Panic("Error: ", node.parent.children[0].value, " is not an array")
 	}
 
 	return args[0]
@@ -547,7 +553,7 @@ func (p *TypeChecker) DotComputedProperty(node *Node) TypeDef {
 	}
 
 	if !isIn {
-		log.Fatal("TypeChecker: [Class " + t.name + "] has no property " + node.children[0].children[0].value + ".")
+		log.Panic("TypeChecker: [Class " + t.name + "] has no property " + node.children[0].children[0].value + ".")
 	}
 
 	args := p.Parse(node)
@@ -599,7 +605,7 @@ func (p *TypeChecker) ClassEntry(node *Node) TypeDef {
 	}
 
 	if len(arr) == 3 && arr[1] != arr[2] {
-		log.Fatal("TypeChecker: [Class "+node.parent.parent.children[0].value+"] Invalid type for property "+node.children[0].value+". Expected: ", arr[1].str, ", Found: ", arr[2].str)
+		log.Panic("TypeChecker: [Class "+node.parent.parent.children[0].value+"] Invalid type for property "+node.children[0].value+". Expected: ", arr[1].str, ", Found: ", arr[2].str)
 	}
 
 	p.variables[idChild.value] = arr[1]
@@ -631,7 +637,7 @@ func (p *TypeChecker) Object(node *Node) TypeDef {
 	class := p.getObjectFromSignature(keys, args)
 
 	if class == nil {
-		log.Fatal("Cannot guess object type", keys)
+		log.Panic("Cannot guess object type", keys)
 	}
 
 	return class.td

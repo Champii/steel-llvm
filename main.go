@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strings"
 
 	"llvm.org/llvm/bindings/go/llvm"
 )
@@ -15,13 +16,13 @@ func getFile(name string) string {
 	file, err := os.Open(os.Args[1])
 
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	buffer, err := ioutil.ReadAll(file)
 
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	file.Close()
@@ -35,7 +36,7 @@ func getAst(steel *Steel) *Node {
 	steel.Pretty = true
 
 	if err := steel.Parse(); err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	return getNewAst(steel)
@@ -70,8 +71,20 @@ func parse(steel *Steel, newAst *Node) Parser {
 		classesType:   classesType,
 	}
 
+	passManager := llvm.NewFunctionPassManagerForModule(parser.module)
+	passManager.InitializeFunc()
+	passManager.AddConstantMergePass()
+	passManager.AddDeadArgEliminationPass()
+	passManager.AddDeadStoreEliminationPass()
+	passManager.AddInstructionCombiningPass()
+	passManager.AddMemorySanitizerPass()
+	passManager.AddReassociatePass()
+
 	parser.AddMemcpy()
 	parser.Parse(newAst)
+
+	passManager.FinalizeFunc()
+	passManager.AddVerifierPass()
 
 	parser.module.Dump()
 
@@ -88,7 +101,7 @@ func writeToDisk(parser Parser) {
 	destFile, err := os.Create(os.Args[1] + ".bc")
 
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	llvm.WriteBitcodeToFile(parser.module, destFile)
@@ -172,7 +185,7 @@ func test() {
 	destFile, err := os.Create(os.Args[1] + ".bc")
 
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 	llvm.WriteBitcodeToFile(module, destFile)
 }
@@ -222,12 +235,13 @@ func parseNode(steel *Steel, node *node32) *Node {
 	return newNode
 }
 
-func recurParse(steel *Steel, parent *Node, node *node32) {
+func recurParse(line int, steel *Steel, parent *Node, node *node32) {
 	for node != nil {
 		newNode := parseNode(steel, node)
+		newNode.line = line
 		parent.AddChildren(newNode)
 		if node.up != nil {
-			recurParse(steel, newNode, node.up)
+			recurParse(strings.Count(steel.Buffer[:node.end], "\n")+1, steel, newNode, node.up)
 		}
 		node = node.next
 	}
@@ -236,8 +250,9 @@ func recurParse(steel *Steel, parent *Node, node *node32) {
 func getNewAst(steel *Steel) *Node {
 	oldRoot := steel.AST()
 	newRoot := new(Node)
+	line := 1
 
-	recurParse(steel, newRoot, oldRoot)
+	recurParse(line, steel, newRoot, oldRoot)
 
 	// fmt.Println(newRoot.children[0].token)
 	return newRoot
@@ -273,6 +288,7 @@ type Node struct {
 	parent   *Node
 	children []*Node
 	t        TypeDef
+	line     int
 }
 
 func (n *Node) AddChildren(node *Node) {

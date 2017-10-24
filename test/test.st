@@ -8,9 +8,14 @@ class Toto
 
 lol = (t: int) -> t
 
+mdr = (p: Toto) -> p.a = p.a + 3
+
 main = ->
-  # a = [1, 48]
-  # mdr(a)
-  z = a: 1, b: 48
-  putchar(lol(z.b + z.a))
+  d = [48, 2]
+  d[1] = 3
+  c = d[0]
+  z = {a: d[0], b: 2}
+  z.a = 50
+  mdr(z)
+  putchar(z.a)
   2

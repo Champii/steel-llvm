@@ -25,7 +25,7 @@ Expression <- Class / Return / If / Assignation / Assignable
 
 Return <- "return" Assignable
 
-Assignation <- Identifier (":" Type)? "=" Assignable
+Assignation <- ComputedPropertyUnderef (":" Type)? "=" Assignable
 
 Assignable <- New / Operation / Object / FunctionDeclaration / Array / FunctionCall / ComputedProperty / Literal
 
@@ -38,6 +38,13 @@ ComputedProperty <- Identifier (BraceComputedProperty / DotComputedProperty)?
 BraceComputedProperty <- "[" (Operation / FunctionCall / ComputedProperty / Literal) "]" (BraceComputedProperty / DotComputedProperty)?
 
 DotComputedProperty <- "." ComputedProperty
+
+
+ComputedPropertyUnderef <- Identifier (BraceComputedPropertyUnderef / DotComputedPropertyUnderef)?
+
+BraceComputedPropertyUnderef <- "[" (Operation / FunctionCall / ComputedPropertyUnderef / Literal) "]" (BraceComputedPropertyUnderef / DotComputedPropertyUnderef)?
+
+DotComputedPropertyUnderef <- "." ComputedPropertyUnderef
 
 # Object
 

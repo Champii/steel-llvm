@@ -15,14 +15,14 @@ func indentCount(str string) int {
 }
 
 func Preproc(str string) string {
-	rawLines := strings.Split(str, "\n")
+	lines := strings.Split(str, "\n")
 
-	var lines []string
-	for _, v := range rawLines {
-		if len(v) > 0 {
-			lines = append(lines, v)
-		}
-	}
+	// var lines []string
+	// for _, v := range rawLines {
+	// 	if len(v) > 0 {
+	// 		lines = append(lines, v)
+	// 	}
+	// }
 
 	var res []string
 
