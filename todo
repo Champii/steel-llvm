@@ -1,0 +1,14 @@
+better variable scoping
+bug external arg
+for
+if
+boolean test
+infer Args type
+make functions on the fly based on the type
+class instance (new) + constructor
+this
+Default values
+func type
+casting
+
+external declaration of the type ? (like haskell)

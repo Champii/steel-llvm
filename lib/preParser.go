@@ -1,4 +1,4 @@
-package main
+package steel
 
 type Preparser struct {
 	// variables map[string]llvm.Value

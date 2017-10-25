@@ -1,4 +1,4 @@
-package main
+package steel
 
 import (
 	"fmt"
@@ -229,7 +229,7 @@ func (t *tokens32) Tokens() []token32 {
 	return t.tree
 }
 
-type Steel struct {
+type SteelParser struct {
 	Buffer string
 	buffer []rune
 	rules  [51]func() bool
@@ -239,11 +239,11 @@ type Steel struct {
 	tokens32
 }
 
-func (p *Steel) Parse(rule ...int) error {
+func (p *SteelParser) Parse(rule ...int) error {
 	return p.parse(rule...)
 }
 
-func (p *Steel) Reset() {
+func (p *SteelParser) Reset() {
 	p.reset()
 }
 
@@ -279,7 +279,7 @@ search:
 }
 
 type parseError struct {
-	p   *Steel
+	p   *SteelParser
 	max token32
 }
 
@@ -307,7 +307,7 @@ func (e *parseError) Error() string {
 	return error
 }
 
-func (p *Steel) PrintSyntaxTree() {
+func (p *SteelParser) PrintSyntaxTree() {
 	if p.Pretty {
 		p.tokens32.PrettyPrintSyntaxTree(p.Buffer)
 	} else {
@@ -315,7 +315,7 @@ func (p *Steel) PrintSyntaxTree() {
 	}
 }
 
-func (p *Steel) Init() {
+func (p *SteelParser) Init() {
 	var (
 		max                  token32
 		position, tokenIndex uint32

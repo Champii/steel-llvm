@@ -1,6 +1,6 @@
-package main
+package steel
 
-type Steel Peg {
+type SteelParser Peg {
 }
 
 Program <- Statement+

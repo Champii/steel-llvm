@@ -1,4 +1,4 @@
-package main
+package steel
 
 import (
 	"log"
@@ -14,7 +14,7 @@ type Parser struct {
 	functionsType map[string]FuncDef
 	variablesType map[string]TypeDef
 	classesType   map[string]ClassDef
-	steel         *Steel
+	steel         *SteelParser
 	currentNode   *Node
 }
 
@@ -109,6 +109,24 @@ func (p *Parser) Parse(node *Node) []interface{} {
 	}
 
 	return res
+}
+
+func getChild(node *Node, t pegRule) *Node {
+	for _, child := range node.children {
+		if child.token == t {
+			return child
+		}
+	}
+
+	return nil
+}
+
+func getTerminal(node *Node) *Node {
+	if len(node.children) == 0 {
+		return node
+	}
+
+	return getTerminal(node.children[0])
 }
 
 func (p *Parser) getVariableValue(name string) llvm.Value {
@@ -243,8 +261,6 @@ func (p *Parser) FunctionCall(node *Node) interface{} {
 	if !exists {
 		log.Panic("Unknown function ", node.children[0].value)
 	}
-
-	args[1].([]llvm.Value)[0].Dump()
 
 	return p.builder.CreateCall(args[0].(llvm.Value), args[1].([]llvm.Value), "")
 }
