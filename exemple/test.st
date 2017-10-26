@@ -32,11 +32,7 @@ lol = (t: int) -> t
 mdr = (p: Toto) -> p.a = p.a + 3
 
 main = ->
-  d = [48, 2]
-  d[1] = 3
-  c = d[0]
-  z = {a: d[0], b: 2}
-  z.a = 50
-  mdr(z)
-  putchar(z.a)
-  2
+  putchar(48)
+  putchar(49)
+  putchar(10)
+  0

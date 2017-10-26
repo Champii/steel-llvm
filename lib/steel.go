@@ -1,21 +1,33 @@
 package steel
 
 import (
+	"log"
+
 	"llvm.org/llvm/bindings/go/llvm"
 )
 
 type Steel struct {
+	Module llvm.Module
 }
 
-type CompilerOptions struct {
+type SteelOptions struct {
+	ToObj    bool
+	ToIr     bool
+	ToStdOut bool
+	Clean    bool
+	PrintAst bool
+	Quiet    bool
+	Verbose  bool
+	Output   string
+	Compile  bool
+	Run      bool
 }
 
 var typeAssoc map[string]llvm.Type
 
 // func (this *Steel) CompileFile(file string, opts CompilerOptions) ([]byte, error) {
 
-func (this *Steel) CompileFile(file string, opts CompilerOptions) ([]byte, error) {
-
+func (this *Steel) CompileFile(file string, opts SteelOptions) ([]byte, error) {
 	typeAssoc = make(map[string]llvm.Type)
 
 	typeAssoc["void"] = llvm.VoidType()
@@ -33,7 +45,9 @@ func (this *Steel) CompileFile(file string, opts CompilerOptions) ([]byte, error
 
 	newAst := getAst(parsed)
 
-	// parsed.PrintSyntaxTree()
+	if opts.PrintAst {
+		parsed.PrintSyntaxTree()
+	}
 
 	functionsType := make(map[string]FuncDef)
 	variablesType := make(map[string]TypeDef)
@@ -53,7 +67,7 @@ func (this *Steel) CompileFile(file string, opts CompilerOptions) ([]byte, error
 
 	parser := Parser{
 		builder:       llvm.NewBuilder(),
-		module:        llvm.NewModule("steel"),
+		module:        this.Module,
 		steel:         parsed,
 		variables:     make(map[string]llvm.Value),
 		functionsType: functionsType,
@@ -63,6 +77,10 @@ func (this *Steel) CompileFile(file string, opts CompilerOptions) ([]byte, error
 
 	parser.AddMemcpy()
 	parser.Parse(newAst)
+
+	if opts.ToIr {
+		parser.module.Dump()
+	}
 
 	if err := llvm.VerifyModule(parser.module, llvm.ReturnStatusAction); err != nil {
 		return []byte{}, err
@@ -106,7 +124,7 @@ func (this *Steel) CompileFile(file string, opts CompilerOptions) ([]byte, error
 	return mb.Bytes(), nil
 }
 
-func (this *Steel) CompileFiles(files []string, opts CompilerOptions) ([][]byte, error) {
+func (this *Steel) CompileFiles(files []string, opts SteelOptions) ([][]byte, error) {
 	var res [][]byte
 
 	for _, file := range files {
@@ -120,4 +138,15 @@ func (this *Steel) CompileFiles(files []string, opts CompilerOptions) ([][]byte,
 	}
 
 	return res, nil
+}
+
+func (this *Steel) Run() int {
+	engine, err := llvm.NewExecutionEngine(this.Module)
+	if err != nil {
+		log.Panic(err)
+	}
+	// engine.
+	res := engine.RunFunction(this.Module.NamedFunction("main"), []llvm.GenericValue{})
+
+	return int(res.Int(false))
 }

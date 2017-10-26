@@ -39,7 +39,6 @@ BraceComputedProperty <- "[" (Operation / FunctionCall / ComputedProperty / Lite
 
 DotComputedProperty <- "." ComputedProperty
 
-
 ComputedPropertyUnderef <- Identifier (BraceComputedPropertyUnderef / DotComputedPropertyUnderef)?
 
 BraceComputedPropertyUnderef <- "[" (Operation / FunctionCall / ComputedPropertyUnderef / Literal) "]" (BraceComputedPropertyUnderef / DotComputedPropertyUnderef)?
