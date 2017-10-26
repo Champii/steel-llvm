@@ -1,6 +1,7 @@
 package steel
 
 import (
+	"fmt"
 	"log"
 
 	"llvm.org/llvm/bindings/go/llvm"
@@ -40,6 +41,8 @@ func (this *Steel) CompileFile(file string, opts SteelOptions) ([]byte, error) {
 	typeAssoc["string"] = llvm.PointerType(llvm.Int8Type(), 0)
 
 	preproc := Preproc(file)
+
+	fmt.Println(preproc)
 
 	parsed := &SteelParser{Buffer: preproc}
 

@@ -124,6 +124,20 @@ func (p *TypeChecker) Parse(node *Node) []TypeDef {
 			toAdd = p.ClassEntry(child)
 		case ruleObject:
 			toAdd = p.Object(child)
+		case ruleConditionalExpression:
+			toAdd = p.ConditionalExpression(child)
+		case ruleOrExpression:
+			toAdd = p.OrExpression(child)
+		case ruleAndExpression:
+			toAdd = p.OrExpression(child)
+		case ruleEqualityExpression:
+			toAdd = p.OrExpression(child)
+		case ruleRelationalExpression:
+			toAdd = p.OrExpression(child)
+		case ruleAdditiveExpression:
+			toAdd = p.OrExpression(child)
+		case ruleMultiplicativeExpression:
+			toAdd = p.OrExpression(child)
 		default:
 
 			switch child.token {
@@ -236,7 +250,10 @@ func (p *TypeChecker) Assignation(node *Node) TypeDef {
 	arr := p.Parse(node)
 
 	idChild := getChild(node, ruleComputedPropertyUnderef)
-	assChild := getChild(node, ruleAssignable)
+	assChild := getChild(node, ruleConditionalExpression)
+	if assChild == nil {
+		assChild = getChild(node, ruleFunctionDeclaration)
+	}
 	// typeChild := getChild(node, ruleType)
 
 	if assChild.children[0].token != ruleFunctionDeclaration {
@@ -356,9 +373,8 @@ func (p *TypeChecker) FunctionDeclaration(node *Node) TypeDef {
 	}
 
 	lType := llvm.FunctionType(retType.t, argsType, false)
-
-	p.functions[node.parent.parent.children[0].value] = FuncDef{
-		name:     node.parent.parent.children[0].value,
+	p.functions[node.parent.children[0].value] = FuncDef{
+		name:     node.parent.children[0].value,
 		argsType: argsTypeD,
 		retType:  retType,
 		td: TypeDef{
@@ -706,4 +722,21 @@ func (p *TypeChecker) ObjectProperty(node *Node) []TypeDef {
 	}
 
 	return res
+}
+
+func (p *TypeChecker) ConditionalExpression(node *Node) TypeDef {
+	args := p.Parse(node)
+	return args[0]
+}
+
+func (p *TypeChecker) OrExpression(node *Node) TypeDef {
+	args := p.Parse(node)
+
+	if len(args) > 1 {
+		if args[0].str != args[1].str {
+			log.Panic("Invalid type", args)
+		}
+	}
+
+	return args[0]
 }

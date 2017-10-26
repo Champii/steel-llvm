@@ -1,7 +1,6 @@
 package steel
 
 import (
-	"fmt"
 	"log"
 	"strconv"
 
@@ -102,6 +101,24 @@ func (p *Parser) Parse(node *Node) []interface{} {
 			toAdd = p.BraceComputedPropertyUnderef(child)
 		case ruleDotComputedPropertyUnderef:
 			toAdd = p.DotComputedPropertyUnderef(child)
+		case ruleConditionalExpression:
+			toAdd = p.ConditionalExpression(child)
+		case ruleOrExpression:
+			toAdd = p.OrExpression(child)
+		case ruleAndExpression:
+			toAdd = p.AndExpression(child)
+		case ruleEqualityExpression:
+			toAdd = p.OrExpression(child)
+		case ruleRelationalExpression:
+			toAdd = p.OrExpression(child)
+		case ruleAdditiveExpression:
+			toAdd = p.OrExpression(child)
+		case ruleMultiplicativeExpression:
+			toAdd = p.OrExpression(child)
+		case ruleIf:
+			toAdd = p.If(child)
+		case ruleElse:
+			toAdd = p.Else(child)
 		default:
 			p.Parse(child)
 
@@ -175,8 +192,8 @@ func (p *Parser) ArgumentDecl(node *Node) interface{} {
 func (p *Parser) FunctionDeclaration(node *Node) interface{} {
 	funcName := "func"
 
-	if node.parent.parent.token == ruleAssignation {
-		funcName = node.parent.parent.children[0].value
+	if node.parent.token == ruleAssignation {
+		funcName = node.parent.children[0].value
 	}
 
 	fType := p.functionsType[funcName]
@@ -189,12 +206,12 @@ func (p *Parser) FunctionDeclaration(node *Node) interface{} {
 
 	p.variables[funcName] = fu
 
-	block := llvm.AddBasicBlock(p.module.NamedFunction(funcName), "entry")
+	// block := llvm.AddBasicBlock(p.module.NamedFunction(funcName), "entry")
 
-	oldBuilder := p.builder
-	p.builder = llvm.NewBuilder()
+	// oldBuilder := p.builder
+	// p.builder = llvm.NewBuilder()
 
-	p.builder.SetInsertPoint(block, block.FirstInstruction())
+	// p.builder.SetInsertPoint(block, block.FirstInstruction())
 
 	p.Parse(node)
 
@@ -202,7 +219,7 @@ func (p *Parser) FunctionDeclaration(node *Node) interface{} {
 		p.builder.CreateRetVoid()
 	}
 
-	p.builder = oldBuilder
+	// p.builder = oldBuilder
 
 	return fu
 }
@@ -241,8 +258,6 @@ func (p *Parser) FunctionCall(node *Node) interface{} {
 		log.Panic("Unknown function ", node.children[0].value)
 	}
 
-	p.module.Dump()
-	fmt.Println("FCALL", args, node.t)
 	return p.builder.CreateCall(args[0].(llvm.Value), args[1].([]llvm.Value), "")
 }
 
@@ -265,9 +280,13 @@ func (p *Parser) Argument(node *Node) interface{} {
 }
 
 func (p *Parser) Block(node *Node) interface{} {
+	block := llvm.AddBasicBlock(p.module.LastFunction(), "block")
+
+	p.builder.SetInsertPoint(block, block.FirstInstruction())
+
 	p.Parse(node)
 
-	return ""
+	return block
 }
 
 func (p *Parser) External(node *Node) interface{} {
@@ -313,8 +332,11 @@ func (p *Parser) Assignation(node *Node) interface{} {
 	var res llvm.Value
 
 	idChild := getChild(node, ruleComputedPropertyUnderef)
-	assChild := getChild(node, ruleAssignable)
+	assChild := getChild(node, ruleConditionalExpression)
 	typeChild := getChild(node, ruleType)
+	if assChild == nil {
+		assChild = getChild(node, ruleFunctionDeclaration)
+	}
 
 	var va llvm.Value
 	exists := true
@@ -661,4 +683,71 @@ func (p *Parser) ObjectProperty(node *Node) interface{} {
 	}
 
 	return res
+}
+
+func (p *Parser) ConditionalExpression(node *Node) interface{} {
+	args := p.Parse(node)
+
+	return args[0]
+}
+
+func (p *Parser) OrExpression(node *Node) interface{} {
+	args := p.Parse(node)
+
+	if len(args) > 1 {
+		return p.builder.CreateOr(args[0].(llvm.Value), args[1].(llvm.Value), "")
+	}
+
+	return args[0]
+}
+
+func (p *Parser) AndExpression(node *Node) interface{} {
+	args := p.Parse(node)
+
+	return args[0]
+}
+
+var mergeBlockGlob llvm.BasicBlock
+
+func (p *Parser) If(node *Node) interface{} {
+	parentFunc := p.module.LastFunction()
+
+	mergeBlockRef := llvm.AddBasicBlock(parentFunc, "")
+	mergeBlockGlob = mergeBlockRef
+
+	args := p.Parse(node)
+
+	var mergeBlock llvm.BasicBlock
+
+	if len(args) == 3 {
+		mergeBlock = args[2].(llvm.BasicBlock)
+	} else {
+		mergeBlock = mergeBlockRef
+	}
+
+	mergeBlockGlob.MoveAfter(mergeBlock)
+
+	p.builder.SetInsertPoint(llvm.PrevBasicBlock(args[1].(llvm.BasicBlock)), parentFunc.FirstBasicBlock().LastInstruction())
+
+	cond := p.builder.CreateICmp(llvm.IntNE, args[0].(llvm.Value), llvm.ConstInt(llvm.Int32Type(), 0, false), "")
+
+	p.builder.CreateCondBr(cond, args[1].(llvm.BasicBlock), mergeBlock)
+
+	p.builder.SetInsertPoint(args[1].(llvm.BasicBlock), llvm.NextInstruction(args[1].(llvm.BasicBlock).LastInstruction()))
+
+	p.builder.CreateBr(mergeBlockRef)
+
+	p.builder.SetInsertPoint(mergeBlockRef, mergeBlockRef.FirstInstruction())
+
+	return args[1]
+}
+
+func (p *Parser) Else(node *Node) interface{} {
+	args := p.Parse(node)
+
+	p.builder.SetInsertPoint(args[0].(llvm.BasicBlock), llvm.NextInstruction(args[0].(llvm.BasicBlock).LastInstruction()))
+
+	p.builder.CreateBr(mergeBlockGlob)
+
+	return args[0]
 }

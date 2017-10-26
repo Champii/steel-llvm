@@ -21,13 +21,13 @@ ExternalArgument <- Type ("," ExternalArgument)?
 
 #  Expressions
 
-Expression <- Class / Return / If / Assignation / Assignable
+Expression <- Class / Return / If / Assignation / ConditionalExpression
 
-Return <- "return" Assignable
+Return <- "return" ConditionalExpression
 
-Assignation <- ComputedPropertyUnderef (":" Type)? "=" Assignable
+Assignation <- ComputedPropertyUnderef (":" Type)? "=" (FunctionDeclaration / ConditionalExpression)
 
-Assignable <- New / Operation / Object / FunctionDeclaration / Array / FunctionCall / ComputedProperty / Literal
+Assignable <- New / Object / FunctionDeclaration / Array / FunctionCall / ComputedProperty / Literal
 
 New <- "new" Identifier "(" Argument* ")"
 
@@ -57,13 +57,27 @@ ObjectProperty <- Identifier ":" Assignable (","? "\n"? ObjectProperty)?
 
 # If Else
 
-If <- "if" BoolTest (Block / ("=>" Expression)) ElseIf? Else?
+If <- "if" ConditionalExpression (Block / ("=>" Expression)) (ElseIf / Else)?
 
-ElseIf <- "elseif" BoolTest (Block / ("=>" Expression)) ElseIf? Else?
+ElseIf <- "\nelseif" ConditionalExpression (Block / ("=>" Expression)) (ElseIf / Else)?
 
-Else <-  "else" (Block / ("=>" Expression))
+Else <-  "\nelse" (Block / ("=>" Expression))
 
-BoolTest <- Assignable "<" (BoolTest / Assignable)
+# ConditionalExpression
+
+MultiplicativeExpression <- Assignable (("*" / "/" / "%") Assignable)*
+
+AdditiveExpression <- MultiplicativeExpression (("+" / "-") MultiplicativeExpression)*
+
+RelationalExpression <- AdditiveExpression (("<" / "<=" / ">" / ">=") AdditiveExpression)*
+
+EqualityExpression <- RelationalExpression ("==" RelationalExpression)*
+
+AndExpression <- EqualityExpression ("&&" EqualityExpression)*
+
+OrExpression <- AndExpression ("||" AndExpression)*
+
+ConditionalExpression <- OrExpression ("?" ConditionalExpression ":" ConditionalExpression)*
 
 # Class
 
