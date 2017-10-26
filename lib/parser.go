@@ -1,6 +1,7 @@
 package steel
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 
@@ -160,21 +161,15 @@ func (p *Parser) getType(name string) llvm.Type {
 	}
 }
 
-func (p *Parser) getArgDeclType(node *Node) []llvm.Type {
-	var res []llvm.Type
-
-	for _, arg := range node.children {
-		res = append(res, p.getType(arg.children[1].value))
-	}
-
-	return res
-}
-
 func (p *Parser) declArgs(node *Node, params []llvm.Value) {
 	for i, arg := range node.children {
 		last := getTerminal(arg.children[0])
 		p.variables[last.value] = params[i]
 	}
+}
+
+func (p *Parser) ArgumentDecl(node *Node) interface{} {
+	return p.Parse(node)
 }
 
 func (p *Parser) FunctionDeclaration(node *Node) interface{} {
@@ -184,26 +179,11 @@ func (p *Parser) FunctionDeclaration(node *Node) interface{} {
 		funcName = node.parent.parent.children[0].value
 	}
 
-	typeElem := getChild(node, ruleType)
-	retType := llvm.VoidType()
+	fType := p.functionsType[funcName]
 
-	argsElem := getChild(node, ruleArguments)
+	fu := llvm.AddFunction(p.module, funcName, fType.td.t)
 
-	var argsType []llvm.Type
-
-	if argsElem != nil {
-		argsType = p.getArgDeclType(argsElem)
-	}
-
-	if typeElem != nil {
-		retType = p.getType(typeElem.children[0].value)
-	}
-
-	f := llvm.FunctionType(retType, argsType, false)
-
-	fu := llvm.AddFunction(p.module, funcName, f)
-
-	if argsElem != nil {
+	if argsElem := getChild(node, ruleArguments); argsElem != nil {
 		p.declArgs(argsElem, fu.Params())
 	}
 
@@ -218,8 +198,7 @@ func (p *Parser) FunctionDeclaration(node *Node) interface{} {
 
 	p.Parse(node)
 
-	noRet := getChild(node, ruleNoReturn)
-	if noRet != nil {
+	if getChild(node, ruleNoReturn) != nil {
 		p.builder.CreateRetVoid()
 	}
 
@@ -262,6 +241,8 @@ func (p *Parser) FunctionCall(node *Node) interface{} {
 		log.Panic("Unknown function ", node.children[0].value)
 	}
 
+	p.module.Dump()
+	fmt.Println("FCALL", args, node.t)
 	return p.builder.CreateCall(args[0].(llvm.Value), args[1].([]llvm.Value), "")
 }
 
@@ -271,18 +252,16 @@ func (p *Parser) Argument(node *Node) interface{} {
 	var res []llvm.Value
 
 	if len(args) > 1 {
-		res = append(args[1].([]llvm.Value), args[0].(llvm.Value))
-		copy(res[1:], res[0:])
-		res[0] = args[0].(llvm.Value)
+		res = append(res, args[0].(llvm.Value))
+
+		for _, item := range args[1].([]llvm.Value) {
+			res = append(res, item)
+		}
 	} else {
 		res = append(res, args[0].(llvm.Value))
 	}
 
 	return res
-}
-
-func (p *Parser) ArgumentDecl(node *Node) interface{} {
-	return p.Parse(node)
 }
 
 func (p *Parser) Block(node *Node) interface{} {
@@ -300,23 +279,15 @@ func (p *Parser) ExternalBlock(node *Node) interface{} {
 }
 
 func (p *Parser) ExternalDef(node *Node) interface{} {
-	arr := p.Parse(node)
+	p.Parse(node)
 
-	var types []llvm.Type
+	id := node.children[0].value
 
-	id := node.children[0]
-	ret := node.children[len(node.children)-1]
+	fType := p.functionsType[id]
 
-	if len(arr) > 2 {
-		types = arr[1].([]llvm.Type)
-	}
+	fu := llvm.AddFunction(p.module, id, fType.td.t)
 
-	retType := p.getType(ret.value)
-
-	extFuncType := llvm.FunctionType(retType, types, false)
-	fu := llvm.AddFunction(p.module, id.value, extFuncType)
-
-	p.variables[id.value] = fu
+	p.variables[id] = fu
 
 	return fu
 }
@@ -372,17 +343,12 @@ func (p *Parser) Assignation(node *Node) interface{} {
 			} else {
 				v = p.builder.CreateAlloca(assChild.t.t, idChild.value)
 			}
-			res = v
 
 			p.builder.CreateStore(assValue, v)
-
-			p.variables[idChild.value] = v
-
-			res = p.builder.CreateLoad(res, "")
-		} else {
-			res = assValue
-			p.variables[idChild.value] = assValue
 		}
+
+		res = assValue
+		p.variables[idChild.value] = assValue
 	} else {
 		res = arr[1].(llvm.Value)
 	}
@@ -528,7 +494,9 @@ func (p *Parser) ArrayElem(node *Node) interface{} {
 var compValue llvm.Value
 
 func (p *Parser) ComputedProperty(node *Node) interface{} {
+	isFirstOfChain := false
 	if node.parent.token != ruleBraceComputedProperty && node.parent.token != ruleDotComputedProperty {
+		isFirstOfChain = true
 		cv, ok := p.variables[node.children[0].value]
 		if !ok {
 			return node.children[0].value
@@ -538,6 +506,10 @@ func (p *Parser) ComputedProperty(node *Node) interface{} {
 	}
 
 	if len(node.children) == 1 {
+		if !isFirstOfChain {
+			compValue = p.builder.CreateLoad(compValue, "")
+		}
+
 		return compValue
 	}
 
@@ -565,9 +537,9 @@ func (p *Parser) DotComputedProperty(node *Node) interface{} {
 	idx := c.GetKeyIdx(node.children[0].value)
 
 	gep := p.builder.CreateStructGEP(compValue, idx, "")
-	load := p.builder.CreateLoad(gep, "")
+	// load := p.builder.CreateLoad(gep, "")
 
-	compValue = load
+	compValue = gep
 
 	return p.Parse(node)[0]
 }

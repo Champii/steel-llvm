@@ -1,6 +1,7 @@
 package steel
 
 import (
+	"fmt"
 	"log"
 
 	"llvm.org/llvm/bindings/go/llvm"
@@ -15,6 +16,7 @@ type FuncDef struct {
 	name     string
 	argsType []TypeDef
 	retType  TypeDef
+	td       TypeDef
 }
 
 type ClassDef struct {
@@ -80,8 +82,6 @@ func (p *TypeChecker) Parse(node *Node) []TypeDef {
 			toAdd = p.Expression(child)
 		case ruleReturn:
 			toAdd = p.Return(child)
-		case ruleArgument:
-			toAdd = p.Argument(child)
 		case ruleIdentifier:
 			toAdd = p.Identifier(child)
 		case ruleType:
@@ -131,6 +131,8 @@ func (p *TypeChecker) Parse(node *Node) []TypeDef {
 				arr = p.ExternalArgument(child)
 			case ruleArguments:
 				arr = p.Arguments(child)
+			case ruleArgument:
+				arr = p.Argument(child)
 			case ruleClassBlock:
 				arr = p.ClassBlock(child)
 			case ruleObjectProperty:
@@ -250,7 +252,7 @@ func (p *TypeChecker) Assignation(node *Node) TypeDef {
 		}
 	}
 
-	if len(arr) == 3 && arr[1] != arr[2] {
+	if len(arr) == 3 && arr[1].str != arr[2].str {
 		log.Panic("TypeChecker: Invalid type for property "+node.children[0].value+". Expected: ", arr[1].str, ", Found: ", arr[2].str)
 	}
 
@@ -272,18 +274,30 @@ func (p *TypeChecker) ExternalBlock(node *Node) TypeDef {
 func (p *TypeChecker) ExternalDef(node *Node) TypeDef {
 	arr := p.Parse(node)
 
-	argsType := []TypeDef{}
+	argsTypeD := []TypeDef{}
+	argsType := []llvm.Type{}
 
 	if len(arr) > 2 {
-		argsType = arr[1 : len(arr)-1]
+		argsTypeD = arr[1 : len(arr)-1]
+		for _, td := range argsTypeD {
+			argsType = append(argsType, td.t)
+		}
 	}
 
-	retType := arr[len(arr)-1]
+	retTypeD := arr[len(arr)-1]
+
+	lType := llvm.FunctionType(retTypeD.t, argsType, false)
+
+	fmt.Println("TC: extdef", argsTypeD)
 
 	p.functions[node.children[0].value] = FuncDef{
 		name:     node.children[0].value,
-		argsType: argsType,
-		retType:  retType,
+		argsType: argsTypeD,
+		retType:  retTypeD,
+		td: TypeDef{
+			str: "",
+			t:   lType,
+		},
 	}
 
 	return TypeDef{}
@@ -295,7 +309,7 @@ func (p *TypeChecker) ExternalArgument(node *Node) []TypeDef {
 	var res []TypeDef
 
 	if len(args) > 1 {
-		res = append(args, args[0])
+		res = append(args[1:], args[0])
 		copy(res[1:], res[0:])
 		res[0] = args[0]
 	} else {
@@ -311,10 +325,14 @@ func (p *TypeChecker) FunctionDeclaration(node *Node) TypeDef {
 	args := getChild(node, ruleArguments)
 	ret := getChild(node, ruleType)
 
-	var argsType []TypeDef
+	var argsTypeD []TypeDef
+	var argsType []llvm.Type
 
 	if args != nil {
-		argsType = arr[:len(args.children[0].children)-1]
+		argsTypeD = arr[:len(args.children[0].children)-1]
+		for _, td := range argsTypeD {
+			argsType = append(argsType, td.t)
+		}
 	}
 
 	retType := TypeDef{str: "void", t: llvm.VoidType()}
@@ -337,10 +355,16 @@ func (p *TypeChecker) FunctionDeclaration(node *Node) TypeDef {
 		retType = arr[len(arr)-1]
 	}
 
+	lType := llvm.FunctionType(retType.t, argsType, false)
+
 	p.functions[node.parent.parent.children[0].value] = FuncDef{
 		name:     node.parent.parent.children[0].value,
-		argsType: argsType,
+		argsType: argsTypeD,
 		retType:  retType,
+		td: TypeDef{
+			str: "():void",
+			t:   lType,
+		},
 	}
 
 	return retType
@@ -381,6 +405,25 @@ func (p *TypeChecker) FunctionCall(node *Node) TypeDef {
 	return f.retType
 }
 
+func (p *TypeChecker) Argument(node *Node) []TypeDef {
+	args := p.Parse(node)
+
+	var res []TypeDef
+
+	if len(args) > 1 {
+		res = append(args[1:], args[0])
+		copy(res[1:], res[0:])
+		res[0] = args[0]
+	} else {
+		res = append(res, args[0])
+	}
+
+	return res
+	// args := p.Parse(node)
+
+	// return args[0]
+}
+
 func (p *TypeChecker) Operation(node *Node) TypeDef {
 	args := p.Parse(node)
 
@@ -403,12 +446,6 @@ func (p *TypeChecker) Block(node *Node) TypeDef {
 	args := p.Parse(node)
 
 	return args[len(args)-1]
-}
-
-func (p *TypeChecker) Argument(node *Node) TypeDef {
-	args := p.Parse(node)
-
-	return args[0]
 }
 
 func (p *TypeChecker) Assignable(node *Node) TypeDef {
@@ -443,7 +480,7 @@ func (p *TypeChecker) VarUse(node *Node) TypeDef {
 }
 
 func (p *TypeChecker) ArrayType(node *Node) TypeDef {
-	return TypeDef{str: node.value, t: llvm.ArrayType(p.getType(node.value), 0)}
+	return TypeDef{str: node.value, t: p.getType(node.value)}
 }
 
 func (p *TypeChecker) Type(node *Node) TypeDef {

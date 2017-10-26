@@ -52,11 +52,20 @@ func main() {
 		log.Fatal("Some scripts lack an out file")
 	}
 
+	failed := 0
+
 	for i, filename := range scripts {
 
 		fmt.Printf("   %s\r", filename)
 
-		exec.Command("../steel", "-C", "scenarios/"+filename).Run()
+		errCmpl := exec.Command("../steel", "-C", "scenarios/"+filename).Run()
+
+		if errCmpl != nil {
+			color.Red("KO")
+			fmt.Println("Compilation error ", errCmpl)
+			failed++
+			continue
+		}
 
 		cmd := exec.Command("./a.out")
 
@@ -64,7 +73,8 @@ func main() {
 
 		if err != nil {
 			color.Red("KO")
-			fmt.Println("Compilation error ", err)
+			fmt.Println("Runtime error ", err)
+			failed++
 			continue
 		}
 
@@ -73,6 +83,7 @@ func main() {
 		if err2 != nil {
 			color.Red("KO")
 			fmt.Println(err2)
+			failed++
 			continue
 		}
 
@@ -80,7 +91,21 @@ func main() {
 			color.Green("OK")
 		} else {
 			color.Red("KO")
-			fmt.Println("Expected: ", expectedOut, "\nGot: ", out)
+			fmt.Println("---\nExpected: ", expectedOut, "\nGot:      ", out, "\n---")
+			failed++
 		}
 	}
+
+	fmt.Print("\nSucceed: ")
+	color.Green("%d", len(scripts)-failed)
+	fmt.Print("Failed:  ")
+	color.Red("%d", failed)
+
+	fmt.Print("\n---\nResult:  ")
+	if failed > 0 {
+		color.Red("Failed")
+	} else {
+		color.Green("Success")
+	}
+
 }

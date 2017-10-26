@@ -4,7 +4,8 @@ external
   write(int, [int8], int): int
 
 main = ->
+  write(1, "lol", 3)
   putchar(48)
   puts("LOL")
-  write(1, "lol", 3)
+  b = "lol"
   0

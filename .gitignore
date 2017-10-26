@@ -5,7 +5,6 @@
 *.dylib
 *.o
 a.out
-test
 peg
 steel
 
