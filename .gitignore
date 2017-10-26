@@ -6,6 +6,8 @@
 *.o
 a.out
 test
+peg
+steel
 
 # Test binary, build with `go test -c`
 *.test
